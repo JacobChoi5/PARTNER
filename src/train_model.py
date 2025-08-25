@@ -14,13 +14,16 @@ import time
 import tqdm
 import datetime
 import torch
+import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
 
 import numpy as np
 
 from os.path import join
 from torch.distributed import get_rank, get_world_size
 
-from lsp_model_rl import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config, Adam
+# from lsp_model_rl import GPT2LMHeadModel, GPT2Tokenizer, GPT2Config, Adam
 from gpt2_training.train_utils import load_model, boolean_string, set_lr, get_eval_list_same_length
 from gpt2_training.eval_utils import eval_model_loss
 
@@ -28,6 +31,10 @@ from data_loader import BucketingDataLoader, DynamicBatchingLoader, DistributedB
 
 
 from gpt2_training.distributed import all_reduce_and_rescale_tensors, all_gather_list
+
+from transformers import AutoTokenizer, AutoConfig
+from lsp_model_rl.modeling_gpt2 import GPT2LMHeadModel
+from torch.optim import AdamW
 
 
 logging.basicConfig(
@@ -168,12 +175,14 @@ for a in args_dict:
 #########################################################################
 # Prepare Data Set
 ##########################################################################
-enc = GPT2Tokenizer.from_pretrained('gpt2-medium')
+enc = AutoTokenizer.from_pretrained('microsoft/DialoGPT-medium')
 enc.add_tokens(['<SPLIT>', '<START>', '<END>'])
-eos = enc.encoder["<|endoftext|>"]
+eos = enc.eos_token_id
 
-config = GPT2Config.from_json_file(
-	join(args.model_name_or_path, 'config.json'))
+# config = GPT2Config.from_json_file(
+# 	join(args.model_name_or_path, 'config.json'))
+
+config = AutoConfig.from_pretrained('microsoft/DialoGPT-medium')
 
 if args.local_rank == -1:
 	train_dataloader = BucketingDataLoader(args.train_input_file,
@@ -197,11 +206,13 @@ else:
 # Prepare Model and Optimizer
 ##########################################################################
 
-gpt2_model = GPT2LMHeadModel.from_pretrained(args.model_name_or_path)
-gpt2_model.resize_token_embeddings(len(enc))
+# gpt2_model = GPT2LMHeadModel.from_pretrained(args.model_name_or_path)
+# gpt2_model.resize_token_embeddings(len(enc))
 
-model = load_model(gpt2_model, args.init_checkpoint,
-				   args, verbose=True)
+# model = load_model(gpt2_model, args.init_checkpoint,
+# 				   args, verbose=True)
+model = GPT2LMHeadModel.from_pretrained('microsoft/DialoGPT-medium')
+model.resize_token_embeddings(len(enc))
 if args.local_rank != -1:
 	# when from scratch make sure initial models are the same
 	params = [p.data for p in model.parameters()]
@@ -244,8 +255,7 @@ if args.fp16:
 								   static_loss_scale=args.loss_scale,
 								   verbose=False)
 else:
-	optimizer = Adam(optimizer_grouped_parameters, args.learning_rate,
-					 max_grad_norm=1.0)
+	optimizer = AdamW(optimizer_grouped_parameters, args.learning_rate)
 
 #########################################################################
 # Training !
@@ -299,9 +309,27 @@ while True:
 
 		input_ids, position_ids, token_ids, seeker_post, response_post,  = batch
 
+	# Debug: print types and shapes
+		logger.info(f"input_ids type: {type(input_ids)}, shape: {getattr(input_ids, 'shape', None)}")
+		logger.info(f"position_ids type: {type(position_ids)}, shape: {getattr(position_ids, 'shape', None)}")
+		logger.info(f"token_ids type: {type(token_ids)}, shape: {getattr(token_ids, 'shape', None)}")
+		logger.info(f"seeker_post type: {type(seeker_post)}, sample: {seeker_post[:2] if isinstance(seeker_post, (list, tuple)) else seeker_post}")
+		logger.info(f"response_post type: {type(response_post)}, sample: {response_post[:2] if isinstance(response_post, (list, tuple)) else response_post}")
+
 		input_ids = input_ids.to(device)
 		position_ids = position_ids.to(device)
 		token_ids = token_ids.to(device)
+
+		# Patch: ensure seeker_post and response_post are lists of strings
+		if isinstance(seeker_post, torch.Tensor):
+			seeker_post = seeker_post.tolist()
+		if isinstance(response_post, torch.Tensor):
+			response_post = response_post.tolist()
+		# If they are lists of bytes, decode to strings
+		if seeker_post and isinstance(seeker_post[0], bytes):
+			seeker_post = [s.decode('utf-8') for s in seeker_post]
+		if response_post and isinstance(response_post[0], bytes):
+			response_post = [r.decode('utf-8') for r in response_post]
 
 		if args.no_token_id:
 			token_ids = None
@@ -329,6 +357,10 @@ while True:
 
 		if n_gpu > 1:
 			loss = loss.mean()
+		# Fix: ensure loss is a tensor, not a string
+		if isinstance(loss, str):
+			logger.error(f"Model returned a string for loss: '{loss}'. This usually means the model is returning logits, not a loss tensor. RL training requires a model that returns (loss, reward). Please use a custom RL model or check your model's forward method.")
+			raise ValueError(f"Model returned a string for loss: '{loss}'. RL training requires a model that returns (loss, reward).")
 		loss = loss / (args.train_batch_size / input_ids.shape[0])
 		if args.fp16:
 			optimizer.backward(loss)

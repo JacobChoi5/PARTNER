@@ -13,17 +13,25 @@ import os
 from os.path import dirname, exists, join
 
 import torch
-from lsp_model_rl import GPT2Tokenizer
+from transformers import GPT2Tokenizer
 from tqdm import tqdm
 
 from env import END_OF_TEXT_TOKEN
-from gpt2_training.train_utils import InputFeatures as InputFeatures
+# from gpt2_training.train_utils import InputFeatures as InputFeatures
+
+class InputFeatures:
+    def __init__(self, id_, input_ids, position_ids, token_type_ids, src_seeker_post, src_response_post):
+        self.id = id_
+        self.input_ids = input_ids
+        self.position_ids = position_ids
+        self.token_type_ids = token_type_ids
+        self.src_seeker_post = src_seeker_post
+        self.src_response_post = src_response_post
 
 
 def _get_file_len(corpus):
-	n_line = int(sp.check_output(f"wc -l {corpus}".split(),
-								 universal_newlines=True).split()[0])
-	return n_line
+    with open(corpus, "r", encoding="utf-8") as f:
+        return sum(1 for _ in f)
 
 
 def _norm_text(text):
@@ -117,6 +125,7 @@ def _make_feature(id_, sents, src_seeker_post, src_response_post, eos):
 
 
 toker = GPT2Tokenizer.from_pretrained('gpt2-medium')
+toker.add_special_tokens({'additional_special_tokens': ['<SPLIT>', '<START>', '<END>']})
 toker.add_tokens(['<SPLIT>', '<START>', '<END>'])
 
 def main(args):

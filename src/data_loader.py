@@ -60,18 +60,23 @@ class BucketSampler(Sampler):
 class GPT2FeatureDataset(Dataset):
 	""" pytorch dataset for GPT2 training """
 	def __init__(self, features, max_len=None):
+		# Ensure every feature dict has 'input_len'
+		for feat_dict in features:
+			if 'input_len' not in feat_dict:
+				feat_dict['input_len'] = len(feat_dict['input_ids'])
 		self.features = features
 		self.max_len = max_len  # this max_len do truncate
 
 	def __getitem__(self, i):
 		feat_dict = self.features[i]
+		# Ensure 'input_len' is present
+		if 'input_len' not in feat_dict:
+			feat_dict['input_len'] = len(feat_dict['input_ids'])
 		if self.max_len is not None and feat_dict['input_len'] > self.max_len:
 			# tuncate on the left side (context)
 			feat_dict['input_ids'] = feat_dict['input_ids'][-self.max_len:]
-			feat_dict['position_ids'] = feat_dict['position_ids'][
-				-self.max_len:]
-			feat_dict['token_type_ids'] = feat_dict['token_type_ids'][
-				-self.max_len:]
+			feat_dict['position_ids'] = feat_dict['position_ids'][-self.max_len:]
+			feat_dict['token_type_ids'] = feat_dict['token_type_ids'][-self.max_len:]
 			# feat_dict['lm_labels'] = feat_dict['lm_labels'][-self.max_len:]
 			# feat_dict['pos_labels'] = feat_dict['pos_labels']
 		try:
@@ -83,6 +88,12 @@ class GPT2FeatureDataset(Dataset):
 			import pdb
 			pdb.set_trace()
 
+		if 'id' in feat_dict:
+			feat_dict['conv_id'] = feat_dict.pop('id')
+		if 'src_seeker_post' in feat_dict:
+			feat_dict['seeker_post'] = feat_dict.pop('src_seeker_post')
+		if 'src_response_post' in feat_dict:
+			feat_dict['response_post'] = feat_dict.pop('src_response_post')
 		feat = InputFeatures(**feat_dict)
 		return feat
 
@@ -136,6 +147,9 @@ class BucketingDataLoader(object):
 			trunc_chunk = []
 			lens = []
 			for feat in chunk:
+				# Ensure 'input_len' is present
+				if 'input_len' not in feat:
+					feat['input_len'] = len(feat['input_ids'])
 				if feat['input_len'] > self.max_len:
 					continue
 				trunc_chunk.append(feat)

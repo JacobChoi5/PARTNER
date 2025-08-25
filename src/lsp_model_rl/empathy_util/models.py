@@ -15,7 +15,7 @@ from transformers import AutoModelWithLMHead, AutoTokenizer
 
 ROBERTA_PRETRAINED_MODEL_ARCHIVE_MAP = {
 	"roberta-base": "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-base-pytorch_model.bin",
-	"roberta-talklike": "../../Empathy-Models/Pretraining-Tasks/pretrained-talklife-roberta/checkpoint-199000/pytorch_model.bin",
+	#"roberta-talklike": "../../Empathy-Models/Pretraining-Tasks/pretrained-talklife-roberta/checkpoint-199000/pytorch_model.bin",
 	"roberta-large": "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-large-pytorch_model.bin",
 	"roberta-large-mnli": "https://s3.amazonaws.com/models.huggingface.co/bert/roberta-large-mnli-pytorch_model.bin",
 	"distilroberta-base": "https://s3.amazonaws.com/models.huggingface.co/bert/distilroberta-base-pytorch_model.bin",
@@ -487,15 +487,12 @@ class BiEncoderAttentionWithRationaleClassification(nn.Module):
 
 		self.apply(self._init_weights)
 
-		self.seeker_encoder = SeekerEncoder.from_pretrained(
-								"../../Empathy-Models/Pretraining-Tasks/pretrained-talklife-roberta-seeker/checkpoint-169000/", # Use the 12-layer BERT model, with an uncased vocab.
-								output_attentions = False, # Whether the model returns attentions weights.
-								output_hidden_states = False)
+		self.seeker_encoder = nn.Module()
+		self.seeker_encoder.roberta = RobertaModel.from_pretrained("roberta-base", config=RobertaConfig.from_pretrained("roberta-base"))
 
-		self.responder_encoder = ResponderEncoder.from_pretrained(
-								"../../Empathy-Models/Pretraining-Tasks/pretrained-talklife-roberta-response/checkpoint-293000/", # Use the 12-layer BERT model, with an uncased vocab.
-								output_attentions = False, # Whether the model returns attentions weights.
-								output_hidden_states = False)
+		self.responder_encoder = nn.Module()
+		self.responder_encoder.roberta = RobertaModel.from_pretrained("roberta-base", config=RobertaConfig.from_pretrained("roberta-base"))
+
 
 	
 	def _init_weights(self, module):

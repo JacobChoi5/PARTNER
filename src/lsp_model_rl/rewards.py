@@ -3,7 +3,6 @@ import numpy as np
 import nltk
 # input: edited sentence, initial sentence, weights
 from .empathy_classifier_bi_encoder_attention import empathy_classifier
-from .coherence_classifier2 import coherence_classifier
 
 orig_sent_list = ["It might help to re-install Python if possible","The version might behind the bug."]
 new_sent_list = ["The version might be the reason for the bug.","The version might be the reason behind the bug."]
@@ -56,8 +55,6 @@ def calc_rewards(seeker_posts, original_responses, generated_responses, candidat
 
 		total_score += curr_empathy_score - prev_empathy_score
 	
-	if _coherence:
-		total_score += calc_coherence_score(original_responses, candidate)
 
 	if _add_noise:
 		total_score -= NOISE
@@ -111,11 +108,6 @@ def calc_empathy_score_3dim(seeker_posts, generated_responses):
 	return batch_score/len(seeker_posts),ER_score_list,IP_score_list,EX_score_list, ER_score, IP_score, EX_score
 
 
-def calc_coherence_score(original_responses, candidate): # original_response: list of strings, candidate: string 
-	(logits, predictions,) = coherence_classifier.predict_empathy(original_responses, candidate)
-	logs_1 = [log[1] for log in logits]
-	score = np.mean(log2prob(logs_1))
-	return score
 
 
 def log2prob(logs):

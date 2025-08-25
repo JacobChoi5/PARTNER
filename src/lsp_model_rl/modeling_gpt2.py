@@ -30,6 +30,11 @@ import time
 import nltk
 import numpy as np
 
+# Ensure NLTK punkt resource is available
+# nltk.download('punkt')
+
+from transformers.modeling_outputs import CausalLMOutputWithPast
+
 from transformers import GPT2PreTrainedModel, GPT2Model
 
 from pytorch_pretrained_bert.modeling_gpt2 import GPT2LMHead, Attention, Block, \
@@ -83,7 +88,9 @@ class GPT2ModelFP16(GPT2Model):
 
 		self.init_weights()
 
-class GPT2LMHeadModel(GPT2PreTrainedModel):
+from transformers import GenerationMixin
+
+class GPT2LMHeadModel(GPT2PreTrainedModel, GenerationMixin):
 	def __init__(self, config):
 		super(GPT2LMHeadModel, self).__init__(config)
 		self.transformer = GPT2Model(config)
@@ -139,17 +146,27 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 			mask[i, :length] = 1
 		return out_tensor, mask
 
-	def forward(self, input_ids, position_ids=None, token_type_ids=None, lm_labels=None, position_labels=None, past=None, seeker_post=None, response_post=None, top_k=60, top_p=0.92, temperature=0.9, eos=None, tokenizer=None, baseline_val=0):
 
+	def forward(self, input_ids, position_ids=None, token_type_ids=None, lm_labels=None, position_labels=None, past=None, seeker_post=None, response_post=None, top_k=60, top_p=0.92, temperature=0.9, eos=None, tokenizer=None, baseline_val=0, return_dict=None):
 		transformer_start_time = time.time()
-
 		# Forward Transformer Pass
-		hidden_states, presents = self.transformer(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, past=past)
-
+		output = self.transformer(input_ids=input_ids, position_ids=position_ids, token_type_ids=token_type_ids, past=past, return_dict=return_dict)
+		# Patch: handle HuggingFace output objects, tuple, or tensor
+		if hasattr(output, 'last_hidden_state'):
+			hidden_states = output.last_hidden_state
+			presents = getattr(output, 'past_key_values', None)
+		elif isinstance(output, tuple):
+			hidden_states = output[0]
+			presents = output[1] if len(output) > 1 else None
+		else:
+			hidden_states = output
+			presents = None
 		transformer_end_time = time.time()
-
 		# Get LM and position logits
 		lm_logits = self.lm_head(hidden_states)
+
+		if return_dict:
+			return CausalLMOutputWithPast(logits=lm_logits, past_key_values=presents)
 
 		if tokenizer is None:
 			return lm_logits, presents
@@ -172,14 +189,14 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 		for ii, _ in enumerate(input_ids):
 			curr_seeker = tokenizer.encode(seeker_post[ii] + tokenizer.eos_token)
 			curr_seeker = torch.tensor([curr_seeker,])
-			curr_seeker = curr_seeker.to('cuda')
+			curr_seeker = curr_seeker.to(input_ids.device)
 			generated_output = self.generate(input_ids = curr_seeker, max_length=1000, pad_token_id=tokenizer.eos_token_id, top_p=0.92, top_k=60, temperature=1, num_return_sequences=1)
 
 			curr_output = tokenizer.decode(generated_output[:, curr_seeker.shape[-1]:][0], skip_special_tokens=True)
 
 			curr_output_ids = generated_output[:, curr_seeker.shape[-1]:][0]
 			curr_output_ids = curr_output_ids[:hidden_states.shape[1]]
-			curr_position_ids = torch.tensor(range(len(curr_output_ids)), dtype=torch.long).to("cuda")
+			curr_position_ids = torch.tensor(range(len(curr_output_ids)), dtype=torch.long).to(input_ids.device)
 
 			curr_output_logits = lm_logits[ii, range(curr_output_ids.shape[0]), curr_output_ids]
 
@@ -205,7 +222,7 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 			curr_output = all_outputs[idx]
 			curr_position = all_positions[idx]
 
-			curr_response_li = nltk.sent_tokenize(curr_response)
+			curr_response_li = nltk.sent_tokenize(curr_response, language='english')
 
 			if curr_position == 0:
 				curr_rewritten_response = curr_response
@@ -245,7 +262,8 @@ class GPT2LMHeadModel(GPT2PreTrainedModel):
 			return loss1, ppl1
 		return lm_logits, presents
 	
-	def prepare_inputs_for_generation(self, input_ids, **kwargs):
+	def prepare_inputs_for_generation(self, input_ids, attention_mask=None, **kwargs):
+		# Accept and ignore attention_mask to suppress HuggingFace warning
 		return {"input_ids": input_ids}
 
 class GPT2ClassificationHead(nn.Module):

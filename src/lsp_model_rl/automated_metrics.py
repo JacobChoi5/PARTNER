@@ -13,7 +13,7 @@ from transformers import GPT2LMHeadModel, GPT2Tokenizer
 
 from torch.utils.data import TensorDataset, DataLoader, RandomSampler, SequentialSampler
 
-device = 'cuda'
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 GPT_model = GPT2LMHeadModel.from_pretrained('microsoft/DialoGPT-medium').to(device)
 GPT_tokenizer = GPT2Tokenizer.from_pretrained('microsoft/DialoGPT-medium')
 
@@ -45,13 +45,9 @@ def perplexity(predicted):
 
 	BATCH_SIZE = 1
 
-	tokenized_input = GPT_tokenizer.batch_encode_plus(predicted, max_length=MAX_LEN, pad_to_max_length=True, truncation=True)
-	
-	input_ids = tokenized_input['input_ids'] 
+	tokenized_input = GPT_tokenizer.batch_encode_plus(predicted, max_length=MAX_LEN, padding='max_length', truncation=True, return_tensors='pt')
+	input_ids = tokenized_input['input_ids']
 	attention_masks = tokenized_input['attention_mask']
-
-	input_ids = torch.tensor(input_ids)
-	attention_masks = torch.tensor(attention_masks)
 
 	data = TensorDataset(input_ids, attention_masks)
 

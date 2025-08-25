@@ -20,7 +20,8 @@ from torch.utils.data import TensorDataset, random_split
 # sys.path.insert(0, 'empathy_util/models.py')
 
 from .empathy_util.models import BiEncoderAttentionWithRationaleClassification
-from transformers import AdamW, RobertaConfig
+from transformers import RobertaConfig
+from torch.optim import AdamW
 
 import datetime
 
@@ -30,14 +31,17 @@ class EmpathyClassifier():
 
 	def __init__(self, 
 			device,
-			ER_model_path = 'src/lsp_model_rl/empathy_util/models/ER-bi-encoder-attention.pth', 
-			IP_model_path = 'src/lsp_model_rl/empathy_util/models/IP-bi-encoder-attention.pth',
-			EX_model_path = 'src/lsp_model_rl/empathy_util/models/EX-bi-encoder-attention.pth',
+			ER_model_path = 'models/medium/reddit_ER.pth',
+			IP_model_path = 'models/medium/reddit_IP.pth',
+			EX_model_path = 'models/medium/reddit_EX.pth',
 			batch_size=2):
 		
 		self.tokenizer = RobertaTokenizer.from_pretrained('roberta-base', do_lower_case=True)
 		self.batch_size = batch_size
-		self.device = device
+		if torch.cuda.is_available():
+			self.device = torch.device("cuda")
+		else:
+			self.device = torch.device("cpu")
 
 		self.model_ER = BiEncoderAttentionWithRationaleClassification()
 		self.model_IP = BiEncoderAttentionWithRationaleClassification()
@@ -73,7 +77,7 @@ class EmpathyClassifier():
 								add_special_tokens = True, # Add '[CLS]' and '[SEP]'
 								max_length = 64,           # Pad & truncate all sentences.
 								truncation=True,
-								pad_to_max_length = True,
+								padding='max_length',
 								return_attention_mask = True,   # Construct attn. masks.
 								return_tensors = 'pt',     # Return pytorch tensors.
 						)
@@ -91,7 +95,7 @@ class EmpathyClassifier():
 								add_special_tokens = True, # Add '[CLS]' and '[SEP]'
 								max_length = 64,           # Pad & truncate all sentences.
 								truncation=True,
-								pad_to_max_length = True,
+								padding='max_length',
 								return_attention_mask = True,   # Construct attn. masks.
 								return_tensors = 'pt',     # Return pytorch tensors.
 						)

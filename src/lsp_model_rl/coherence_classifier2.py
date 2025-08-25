@@ -16,7 +16,8 @@ from transformers import RobertaTokenizer
 from torch.utils.data import DataLoader, RandomSampler, SequentialSampler
 from torch.utils.data import TensorDataset, random_split
 
-from transformers import AdamW, RobertaConfig, RobertaForSequenceClassification
+from transformers import RobertaConfig, RobertaForSequenceClassification
+from torch.optim import AdamW
 
 import datetime
 
